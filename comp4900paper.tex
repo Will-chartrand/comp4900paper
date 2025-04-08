@@ -1,0 +1,129 @@
+\documentclass[transmag]{IEEEtran}
+
+% Packages
+\usepackage{geometry}
+\geometry{left=1.5cm, right=1.5cm, top=2.54cm, bottom=2.54cm}
+\usepackage{graphicx, hyperref, setspace, amsmath, amssymb, titlesec, multicol, parskip, indentfirst, caption, cite, xcolor, fancyvrb}
+%\usepackage[document]{ragged2e}
+
+
+\renewcommand{\thesubsection}{\thesection.\arabic{subsection}}
+\renewcommand{\thesection}{\arabic{section}}
+
+
+\makeatletter
+\renewcommand{\@seccntformat}[1]{\csname the#1\endcsname.\hspace{0.5em}} % Ensures correct formatting
+\makeatother
+
+\makeatletter
+\renewcommand{\section}{\@startsection{section}{1}{\z@}%
+  {1.0ex plus 1.0ex minus .2ex}%
+  {0.5ex plus .2ex}% 
+  {\normalfont\large\bfseries}} 
+\makeatother
+
+\begin{document}
+
+\title{
+    \textbf{Dynamic FreeRTOS Scheduler Alternatives } 
+}
+
+\author{
+  {\Large Dalton Sayer}  \\ 101229920 \\
+  \and
+  {\Large Will Chartrand} \\ 101229796 \\
+  \and
+  {\Large Justin Schoenhofer} \\ 101186399 \\
+  \and
+  {\Large Zak Berkelaar} \\ 101230226 \\
+}
+
+\IEEEtitleabstractindextext{%
+  \begin{center}
+    \textit{\{ daltonsayer, willchartrand, justinshoenhofer, zakberkelaar \}@cmail.carleton.ca} \\ 
+  \end{center}
+  \vspace{2em}
+\begin{abstract}
+  Real-time operating systems require robust scheduling to achieve the strict timing requirements put in place by their use cases. While Free-RTOS and QNX both use similar schedulers by default (static priority preemptive scheduling with round-robin for equal priority tasks) there are many varied designs for real-time operating system (RTOS) schedulers that perform better for specific use cases. The goal of this report is to discuss and compare alternate schedular algorithms implementable in FreeRTOS.
+\end{abstract}
+}
+
+\maketitle
+
+\IEEEdisplaynontitleabstractindextext
+
+
+
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0.5cm}
+
+ 
+
+\vspace{0.5em}
+
+\section{Problem Statement, Conceptual Framework, and Research Question}
+
+A scheduler is responsible for choosing which task runs at any given time on a processor. RTOS schedulers are responsible for ensuring that all tasks are completed before their deadline. A common scheduling algorithm is round-robin, where each task is run for a fixed amount of time on the CPU before the next task in the cycle is run. Round-robin is a great scheduling algorithm for non-real-time operating systems because it is simple and understandable, but it does not meet the requirements to be a real time scheduler because it cannot prioritize tasks to meet timing constraints.  
+
+The scheduling algorithm used by FreeRTOS meets these timing constraints by giving each task a static priority and always running the available task with the highest priority, then using round-robin for equally high priority tasks.  While this scheduler is good for a variety of applications, there are situations where it is not the optimal solution. The round-robin system switches between tasks unnecessarily often, and this switching has an associated time cost. Another concern is that lower priority tasks may not be executed before their deadline passes because they cannot change their priority.  
+
+A scheduler that addresses both of these issues is Earliest Deadline First (EDF). The basic idea of EDF is to always assign the highest priority to the task with the earliest deadline. This minimizes the total opportunity for missed deadlines at the cost of being unable to assign different priorities to different tasks. 
+
+\vspace{0.5em}
+
+\section{What makes a schedular Real-Time} 
+
+The goal of a real-time scheduler is to meet task deadlines. A feasible schedule is one where all tasks can be completed within their time constraints. A real-time scheduling algorithm is optimal if it always produces a feasible schedule when it is possible i.e., when there exists enough time for all tasks to be completed within their deadlines. This can be proven to be true with analysis of the algorithms. Another important distinction is between hard real-time systems and soft real-time systems. A hard real-time system does not allow for deadlines to be missed, if a deadline can be missed then the system has been built incorrectly, while a soft real-time system allows for some deadlines to be missed. For the purposes of this report, we will be implementing and discussing hard real-time scheduling. 
+
+
+
+\section{Reference to Literature and Documentation}
+
+This report is based on “Implementation and Test of EDF and LLREF Schedulers in FreeRTOS” by Enrico Carraro. In this paper Carraro replaces the default FreeRTOS scheduler with two alternatives: EDF, and largest local remaining execution first (LLREF). Both EDF and LLREF are provably optimal scheduling algorithms, so the purpose of this paper was to implement them and to prove correctness of the implementations in FreeRTOS. Carraro uses Cheddar to observe the behavior of the two schedulers, which he then compares to the theoretical behavior to check for correctness. Cheddar is an open-source GNU real-time scheduling analyzer and simulator software that allows for testing of real-time schedulers. 
+
+\section{Static priority preemptive scheduling with round-robin for equal priority tasks} 
+
+Static priority preemptive scheduling with round-robin for equal priority tasks is the default single-core scheduling policy in FreeRTOS. The “static” or “fixed” priority (different depending on literature) means that the scheduler cannot make permanent changes to the priority of a task, but it can temporarily increase the priority of a task through priority inheritance. FreeRTOS handles priority inheritance through mutexes; if a higher priority task is blocked by a mutex held by a lower priority task, then the lower priority task will temporarily be assigned the priority of the highest priority task waiting on the mutex. The preemption allows the scheduler to always run the highest priority task available. If the scheduler is running a lower priority task and a higher priority task becomes available, the scheduler will preempt the execution of the lower priority task with the higher priority task. The time sliced round-robin used for equal priority tasks allows for fairness between tasks of the same priority, with each equal priority task being given a single time slice that ends on each tick interrupt. The tick interrupt is the periodic time measurement interrupt used by FreeRTOS. The lowest priority task is the idle task, which is responsible for freeing memory, it also ensures that there is always at least one task available to run on the CPU.  
+
+\section{Relevance} 
+
+While the default FreeRTOS scheduling policy is useful for a wide range of cases, it creates some issues of its own. In the case where there is no time between high priority tasks, or where a single high priority task is never blocked or suspended, then the lower priority tasks will never have a chance to run. This issue is why it is recommended to create event-driven tasks, i.e. do not create a high priority task that uses a while(1) loop to poll a low priority task since the lower priority task will never be given a time slice to run.  
+
+Another issue with the default scheduler is that it switches between tasks unnecessarily often. This can delay the completion of tasks due to the added time spent on context switching. In the case of a system where the goal is to ensure that each task is completed as quickly as possible, this slight added cost of the round-robin system can be problematic, requiring a different scheduling solution. 
+
+\section{Earliest Deadline First} 
+
+Earliest Deadline First (EDF), sometimes referred to as Least Time To Go is an alternative RTOS scheduling algorithm that addresses some of the issues of other policies. Unlike the previously mentioned static priority solution, EDF uses dynamic priorities to manage tasks. The basic idea behind EDF is to always run the task with the soonest deadline. In the case of single processor preemptable systems, this design is an optimal scheduling algorithm. This means that if there exists a way to order the tasks where they are all completed before their deadlines, then the EDF algorithm will ensure this is achieved. Another benefit of the EDF algorithm is that it has minimum overhead from switching between tasks, because it does not switch tasks until they have finished, except in the case of preemption. 
+
+\section{Largest Local Remaining Execution First} 
+
+\section{Research Design} 
+
+After replacing the default FreeRTOS scheduler with our custom EDF and LLREF implementations data can be collected. In this paper the data was collected from a *** using *** to calculate the exact time when tasks arrive, start execution and finish execution. Using these 3 statistics we can calculate higher level metrics that allow us to compare these 3 schedulers to each other. 
+
+The following metrics will be used for comparison: 
+
+\begin{itemize}
+  \item Makespan (total completion time), which is defined as the difference between the first task arriving and the last task finishing[1]. Formally $T_{make} = \max T_{\text{finished}} - \min T_{\text{arrival}}$
+  \item 
+    Turnaround time, which is defined as the difference between when a task arrives and when it finishes [2]. Formally $T_{\text{turnaround}} = T_{\text{finished}} - T_{\text{arrival}}$
+  \item Response time, which is defined as the difference between when a task arrives and when it is first scheduled [2]. Formally $T_{\text{response}} = T_{\text{first}} - T_{\text{arrival}}$
+\end{itemize}
+
+\section{Instrumentation, Data collection and Quality control}
+
+ 
+
+\section{Population and Sample}
+
+\section{Data Analysis and Statistics}
+
+\section{Presentation of Results}
+
+\section{Discussion and Conclusion }
+
+\bibliographystyle{ieeetr}
+\bibliography{bibliography}
+
+
+\end{document}
